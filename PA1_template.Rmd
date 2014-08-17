@@ -1,20 +1,168 @@
-# Reproducible Research: Peer Assessment 1
+---
+title: "Reproducible Research: Peer Assessment 1"
+author: "Frank Hasbani"
+date: "Monday, August 04, 2014"
+output: html_document
+---
+
+
+
+###### Reproducible Research: Peer Assessment 1    
+
 
 
 ## Loading and preprocessing the data
+1. Loading the data
+```{r loading, echo = TRUE}
+## In order to execute this code properly, this Rmd and all required files must be located in the same folder
+activity <- read.csv("./activity.csv", header=TRUE, na.strings = "NA", 
+                     colClasses = c("numeric", "Date", "numeric"),comment.char="")
+```
 
 
+2. Processing/transforming data into a format suitable to anlayze.
+```{r echo = TRUE}
+# Examining a sample of the data to understand the contents, structure etc....
+head(activity)
+tail(activity)
+summary(activity)
+str(activity)
+# Processing the Date from character class date to POSIXlt class incase we need it..
+# Also adding $dayname column representing the Day Of The Week to use for NA filling
+# Although we can process inetrvals, their questions did not support any change
+activity$Date <- strptime(activity$date, format = "%Y-%m-%d")
+activity$dayname <- as.factor(weekdays(activity$date))
+summary(activity)
+```
+   
+     
+     
+## What is the mean total number of steps taken per day?
 
-## What is mean total number of steps taken per day?
+1. Histogram of the mean of total number of steps taken each day
+```{r mean-histogram, echo = TRUE}
+# Make a histogram of the total number of steps taken each day
+# Using break to to reduce clustering helps at understanding the distribution and bias
+# The histogram shows the detailed distribution of the total number of steps each day as a single event.
+library(plyr)
+dailyData <- ddply(activity, c("Date"), summarize, dailysteps = sum(steps))
+hist(dailyData$dailysteps, breaks = 62, main = "Frequency of the total number of Steps", xlab = "Number of Daily Steps") 
+```
 
-
+2. Calculating **Mean** and **median** total number of steps taken per day
+```{r mean+median, echo = TRUE}
+mean(tapply(activity$steps, activity$date, sum, na.rm = TRUE))
+median(tapply(activity$steps, activity$date, sum, na.rm = TRUE))
+message("The mean and median results appear to be supported by the Histogram above, most freq < 3 are under 10000, while most of freq >= 3 are above 10000 steps. The larger number of groups is under 10000. The difference between the mean and median explains the bias")
+```
 
 ## What is the average daily activity pattern?
 
+1. Making a time series plot (i.e. type = "l") of the 5-minute interval (x-axis)
+and the average number of steps taken, averaged across all days (y-axis)  
+  
+```{r averagedaily, echo = TRUE}
+library(ggplot2)
+intervalData <- ddply(activity, c("interval"), summarize, steps = mean(steps, na.rm = T))
+colnames(intervalData) <- c("Interval", "Steps")
+plot(intervalData, type = "l", main="Average number of Steps per Interval")
+```
+  
+2. The 5-minute interval, on average across all the days in the dataset,
+containing the maximum number of steps is:  
+  
+```{r echo = TRUE}
+intervalData$Interval[which.max(intervalData$Steps)]
+```
 
-
+   
 ## Imputing missing values
 
+1. Total number of rows with NAs   
+Note that there are a number of days/intervals where there are missing values (coded as NA). The presence of missing days may introduce bias into some calculations or summaries of the data.  
+   
+```{r NACount, echo = TRUE}
+nrow(activity[is.na(activity$steps),]) 
+summary(activity$steps)
+mean(activity$steps, na.rm = TRUE)
+sd(activity$steps, na.rm = TRUE)
+```
+   
+   
+Devise a strategy for filling in all of the missing values in the dataset.    
+2. Use the mean for 5-minute interval, to replace the missing values.
+*We will use the means of same interval as the one missing to fill in its missing values.*      
+Other alternatives were examined and can equaly be used as well with similar corrective results
+Such as a random number genrator with same mean and sd, or same day of the week average, or  average of same interval of the missing value. The average of the same interval as the missing values appears to be the most effective due to habits, although something can be said if weekday or weekend are actored into it.
+
+3. A new dataset that is equal to the original dataset but with the missing data filled in.
+```{r newdataset}
+activity.filled <- activity
+for (i in seq(nrow(activity))) {
+    if (is.na(activity$steps[i])) {
+        activity.filled$steps[i] <-  intervalData$Steps [intervalData$Interval == activity$interval[i]]
+    }
+}
+```
+
+4. Histogram of the total number of steps taken each day (Filled Data)
+```{r mean+histogram2, echo = TRUE}
+library(lattice)
+# This code was used for debugging purposes to further digg deeper into the data
+
+# xyplot(steps ~ interval | date, data = aggregate(steps ~ interval + date,
+#         activity, FUN = sum),
+#        type = "l", 
+#        layout = c(7, 9),
+#        group=date, 
+#        ylab = "Total Daily Steps",
+#        xlab = "Date")
+
+
+## Display the daily plot After fillings are made
+
+dailyData <- ddply(activity.filled, c("Date"), summarize, dailysteps = sum(steps))
+hist(dailyData$dailysteps, breaks = 62, main = "Histogram of the total number of steps each day After NA Filling", xlab = "Number of Daily Steps") 
+
+## Mean and Median of the complete Filled Activities 
+mean(tapply(activity.filled$steps, activity.filled$date, sum, na.rm = TRUE))
+median(tapply(activity.filled$steps, activity.filled$date, sum, na.rm = TRUE))
+message("The mean and median results are alligned and demonstrate the elimination of bias resulting fom the NA values in the dataset. The graph shows the improved concentration around the mean as well as increase in the Frequency around it, since the NAs have been filled, Thus an increace in the Mean and allignment between the Mean and the Median.")
+head(activity.filled)
+tail(activity.filled)
+summary(activity.filled)
+str(activity.filled)
+```
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+ 
+1. Create a new factor variable in the dataset with two levels - "weekday" and "weekend" indicating whether a given date is a weekday or weekend day.
+```{r week, echo = TRUE}
+activity.filled$day <- as.factor(ifelse(weekdays(activity.filled$date)
+                                 %in% c("Saturday","Sunday"),
+                                 "Weekend", "Weekday"))
+```
+   
+2. Make a panel plot containing a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis).
+```{r echo = TRUE}
+library(lattice)
+xyplot(steps ~ interval | day, data = aggregate(steps ~ interval + day,
+                                                activity.filled, FUN = mean),
+       layout = c(1, 2), type = "l", group=day, ylab = "Average Steps",
+       xlab = "Interval")
+weekData <- ddply(activity.filled, .(day, interval), summarize, dailysteps = mean(steps))
+weekdays <- weekData[weekData$day == "Weekday", ]
+weekends <- weekData[weekData$day == "Weekend", ]
+#t.test()
+summary(weekdays)
+summary(weekends)
+message("Yes there are differences between the Weekdays and Weekends, as demonstrated in the Plot and Summary printout. These differences do support the earlier conclusion of additional value in selecting Weekday Interval Average to fill missing values falling within the same parameters. However, since the median and mean coalessed, significant benefit would be immaterial from such a use")
+```
+
+```{r echo = FALSE}
+## This chunk is not to be used in RStudio, where the KnitHTML accomplishes the same objective
+## Converting to .md file
+## library(knitr)
+## knit("ActivitiesReport.Rmd")
+
